@@ -106,7 +106,7 @@ Node stage and serves it from the Python image.
 | `CLICKHOUSE_PASSWORD`    | Database password                                        |
 | `CLICKHOUSE_SECURE`      | `true` for ClickHouse Cloud                              |
 | `GEMINI_API_KEY`         | Google AI Studio key                                     |
-| `GEMINI_MODEL`           | Primary model, default `gemini-3.5-flash`                |
+| `GEMINI_MODEL`           | Primary model. AI Studio keys: `gemini-3.5-flash`. Vertex: `gemini-2.5-flash` |
 | `GEMINI_FALLBACK_MODELS` | Comma list tried on overload                             |
 | `AGENT_MAX_TOOL_CALLS`   | Max Gemini drill-down queries per analysis, default 2    |
 | `PORT`                   | HTTP port, default 8080                                  |
@@ -141,3 +141,9 @@ Enable the Vertex AI API on the project first.
 ## License
 
 MIT. See `LICENSE`.
+
+## Live deployment
+
+- App: https://scenedna-95805809208.us-central1.run.app
+- Gemini served through Vertex AI in the project (gemini-2.5-flash, fallback gemini-2.5-pro)
+- ClickHouse Cloud reached exclusively through the mcp-clickhouse server over stdio
