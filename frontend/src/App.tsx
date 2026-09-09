@@ -107,6 +107,7 @@ interface ClickHouseEvidence {
   scene_types: SceneType[];
   scene_count: number;
   match_note?: string;
+  matched_scenes?: number;
   tables: string[];
 }
 interface CutRecommendation {
@@ -247,6 +248,9 @@ export default function App() {
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [askResult, setAskResult] = useState<AskResponse | null>(null);
+  const [evidenceInline, setEvidenceInline] = useState(false);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const [recent, setRecent] = useState<RecentAnalysis[]>(() => {
     try {
       return JSON.parse(localStorage.getItem("scenedna.recent") || "[]") as RecentAnalysis[];
@@ -317,6 +321,10 @@ export default function App() {
       try {
         const form = new FormData();
         form.append("file", file);
+        setVideoUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return URL.createObjectURL(file);
+        });
         const res = await fetch("/api/analyze-video", { method: "POST", body: form });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `Upload failed (${res.status})`);
         setSelectedCut("upload");
@@ -358,10 +366,17 @@ export default function App() {
 
   const duration = data?.features.duration_sec ?? 0;
   useEffect(() => {
+    if (videoUrl) return;
     if (!isPlaying || !duration) return;
     const id = setInterval(() => setCurrentTime((t) => (t + 1 >= duration ? 0 : t + 1)), 1000);
     return () => clearInterval(id);
-  }, [isPlaying, duration]);
+  }, [isPlaying, duration, videoUrl]);
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !videoUrl) return;
+    if (isPlaying) v.play().catch(() => setIsPlaying(false));
+    else v.pause();
+  }, [isPlaying, videoUrl]);
 
   // -- derived --------------------------------------------------------------------
   const ch = data?.clickhouse;
@@ -375,6 +390,29 @@ export default function App() {
   const risk: Risk = data ? ((data.risk.level.charAt(0) + data.risk.level.slice(1).toLowerCase()) as Risk) : "Low";
   const factors = data ? data.risk.factors.map((f) => ({ label: f.label, hit: f.matched })) : [];
   const matched = data?.risk.matched ?? 0;
+  const positiveFactor: Record<string, string> = {
+    "Dialogue ratio above 75%": "Dialogue ratio below the risk threshold",
+    "Duration above 4 minutes": "Runtime under 4 minutes",
+    "Low camera motion": "Camera motion above the risk threshold",
+    "Low music intensity": "Music intensity above the risk threshold",
+  };
+  const recCount = (data?.prescription_structured.cuts.length ?? 0) + (data?.prescription_structured.camera_directions.length ?? 0);
+  const topPattern = ch?.patterns?.[0];
+  const insight = data && top
+    ? matched >= 3
+      ? `This scene matches ${matched} of ${factors.length} patterns historically associated with elevated abandonment among ${top.age_group} ${top.device} viewers.`
+      : topPattern
+        ? `Historical insight: ${topPattern.pattern.toLowerCase()} is associated with ${topPattern.hazard_ratio.toFixed(1)}x the baseline exit rate among ${top.age_group} ${top.device} viewers. This scene avoids that pattern.`
+        : ""
+    : "";
+  const agentStats: Record<string, string> = data
+    ? {
+        scene: `${Object.keys(data.features).length} features extracted`,
+        pattern: `${fmtRows(ch?.rows_scanned ?? 0)} events · ${ch?.matched_scenes ?? 0} similar scenes compared`,
+        risk: `${matched}/${factors.length} risk factors matched`,
+        strategist: `${recCount} recommendations generated`,
+      }
+    : {};
   const cuts = data?.prescription_structured.cuts ?? [];
   const scrollTo = (id: string) => {
     setNav(id);
@@ -446,7 +484,11 @@ export default function App() {
               {asking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRight className="h-3.5 w-3.5" />} Ask
             </button>
           </div>
-          <div className="hidden text-[10px] uppercase tracking-[0.3em] text-slate-500 xl:block">Creative intelligence for a brighter tomorrow</div>
+          <div className="hidden items-center gap-3 font-mono text-[10px] uppercase tracking-wider text-slate-400 xl:flex">
+            <span className={health?.gemini ? "text-lime-300" : ""}>Gemini video {health?.gemini ? "✓" : "…"}</span>
+            <span className={health?.mcp.connected ? "text-lime-300" : ""}>ClickHouse MCP {health?.mcp.connected ? "✓" : "…"}</span>
+            <span className={health?.gemini ? "text-lime-300" : ""}>{(data?.model || health?.gemini_model || "gemini").replace("gemini-", "Gemini ")} ✓</span>
+          </div>
           {data && (
             <div title={data.mode.detail} className={`hidden items-center gap-2 rounded-xl border px-3 py-2 font-mono text-[11px] uppercase tracking-wider md:flex ${data.mode.mode === "live" ? "border-lime-400/40 bg-lime-400/10 text-lime-300" : data.mode.mode === "partial" ? "border-amber-400/40 bg-amber-400/10 text-amber-200" : "border-orange-500/40 bg-orange-500/10 text-orange-300"}`}>
               <span className={`h-2 w-2 rounded-full ${data.mode.mode === "live" ? "bg-lime-400" : "bg-amber-400 animate-pulse"}`} />
@@ -575,7 +617,7 @@ export default function App() {
                   <input ref={fileInput} type="file" accept="video/mp4,video/quicktime,video/webm,video/x-matroska" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadVideo(f); e.target.value = ""; }} />
                   <div className="mt-5 flex gap-2" onClick={(e) => e.stopPropagation()}>
                     {["cut_01", "cut_02"].map((id) => (
-                      <button key={id} disabled={loading} onClick={() => { setSelectedCut(id); fetchPreset(id); }} className={`rounded-md border px-2.5 py-1 font-mono text-[11px] ${selectedCut === id ? "border-lime-400/50 bg-lime-400/10 text-lime-200" : "border-white/10 text-slate-400 hover:text-white"}`}>
+                      <button key={id} disabled={loading} onClick={() => { setSelectedCut(id); setVideoUrl(null); fetchPreset(id); }} className={`rounded-md border px-2.5 py-1 font-mono text-[11px] ${selectedCut === id ? "border-lime-400/50 bg-lime-400/10 text-lime-200" : "border-white/10 text-slate-400 hover:text-white"}`}>
                         {id === "cut_01" ? "Preset · Dialogue lock" : "Preset · Action cut"}
                       </button>
                     ))}
@@ -585,9 +627,20 @@ export default function App() {
                 {/* Monitor */}
                 <div className="overflow-hidden rounded-xl border border-white/10 bg-black">
                   <div className="relative aspect-video bg-gradient-to-br from-[#1a1f2b] via-[#0b0e14] to-black">
+                    {videoUrl && (
+                      <video
+                        ref={videoRef}
+                        src={videoUrl}
+                        playsInline
+                        className="absolute inset-0 h-full w-full object-contain"
+                        onTimeUpdate={(e) => setCurrentTime(Math.floor(e.currentTarget.currentTime))}
+                        onEnded={() => setIsPlaying(false)}
+                        onClick={() => setIsPlaying((p) => !p)}
+                      />
+                    )}
                     <div className="pointer-events-none absolute inset-0 [background:radial-gradient(circle_at_70%_30%,rgba(251,191,36,0.18),transparent_40%)]" />
                     <div className={`pointer-events-none absolute inset-0 transition-opacity ${isPlaying ? "opacity-100 animate-drift" : "opacity-0"} [background:radial-gradient(circle_at_30%_60%,rgba(255,255,255,0.06),transparent_40%)]`} />
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center">
+                    <div className={`absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center transition-opacity ${videoUrl && isPlaying && !loading ? "pointer-events-none opacity-0" : ""}`}>
                       {loading ? (
                         <>
                           <Loader2 className="h-7 w-7 animate-spin text-lime-300" />
@@ -598,7 +651,7 @@ export default function App() {
                           <button onClick={() => setIsPlaying((p) => !p)} className="grid h-14 w-14 place-items-center rounded-full bg-white/90 text-black shadow-xl hover:scale-105">
                             {isPlaying ? <Pause className="h-6 w-6" /> : <Play className="ml-1 h-6 w-6" />}
                           </button>
-                          <p className="mt-2 text-sm text-white">{data?.features.scene_title}</p>
+                          <p className={`mt-2 text-sm text-white ${videoUrl ? "rounded bg-black/60 px-2 py-0.5" : ""}`}>{data?.features.scene_title}</p>
                         </>
                       )}
                     </div>
@@ -679,13 +732,31 @@ export default function App() {
 
             {/* Risk assessment */}
             <section id="sec-reports" hidden={!show("reports")} className="rounded-2xl border border-white/5 bg-[#0c100c] p-5">
-              <div className="mb-4 flex items-center gap-3">
+              <div className="mb-4 flex flex-wrap items-center gap-3">
                 <h2 className="text-lg font-semibold text-white">New Scene Risk Assessment</h2>
                 <span className="text-xs text-slate-500">Compare your scene against discovered patterns</span>
-                <button onClick={() => scrollTo("logs")} className="ml-auto flex items-center gap-1 rounded-md border border-white/15 px-3 py-1.5 text-xs text-white hover:bg-white/5">
-                  Open Agent Logs <ArrowRight className="h-3 w-3" />
+                <button onClick={() => setEvidenceInline((v) => !v)} className="ml-auto flex items-center gap-1 rounded-md border border-amber-400/40 bg-amber-400/10 px-3 py-1.5 text-xs text-amber-200 hover:bg-amber-400/20">
+                  <Database className="h-3.5 w-3.5" /> {evidenceInline ? "Hide" : "View"} ClickHouse evidence
                 </button>
               </div>
+              {insight && (
+                <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${matched >= 3 ? "border-orange-500/30 bg-orange-500/10 text-orange-100" : "border-lime-400/30 bg-lime-400/10 text-lime-100"}`}>
+                  {insight}
+                </div>
+              )}
+              {evidenceInline && ch && (
+                <div className="mb-4 grid gap-3 rounded-xl border border-amber-400/20 bg-black/30 p-4 lg:grid-cols-[1.4fr_1fr]">
+                  <pre className="max-h-56 overflow-auto rounded-lg bg-black/50 p-3 font-mono text-[11px] leading-relaxed text-emerald-200">{ch.bound_sql}</pre>
+                  <div className="space-y-2 text-xs">
+                    <Row label="Executed via" value={`${ch.transport} · ${ch.mcp_server}`} />
+                    <Row label="Events scanned" value={`${ch.rows_scanned.toLocaleString()} rows in ${fmtMs(ch.latency_ms)}`} />
+                    <Row label="Scenes queried" value={`${ch.matched_scenes ?? 0} similar of ${ch.scene_count} in library`} />
+                    <Row label="Top segment" value={top ? `${top.age_group} ${top.device} · ${top.dropout_percentage.toFixed(2)}% · ${top.hazard_ratio.toFixed(2)}x` : "—"} />
+                    <Row label="Risk pattern" value={topPattern ? `${topPattern.pattern} · ${topPattern.hazard_ratio.toFixed(1)}x` : "—"} />
+                    <button onClick={() => scrollTo("logs")} className="mt-1 text-[11px] text-amber-200 hover:text-white">Full agent trace and every query →</button>
+                  </div>
+                </div>
+              )}
               <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr_1.3fr]">
                 <div className={`flex items-center gap-4 rounded-xl border p-4 ${risk === "High" ? "border-orange-500/40 bg-orange-500/10" : risk === "Medium" ? "border-amber-400/40 bg-amber-400/10" : "border-lime-400/40 bg-lime-400/10"}`}>
                   <div className={`grid h-12 w-12 place-items-center rounded-xl ${risk === "High" ? "bg-orange-500/20 text-orange-300" : risk === "Medium" ? "bg-amber-400/20 text-amber-200" : "bg-lime-400/20 text-lime-300"}`}>
@@ -693,23 +764,25 @@ export default function App() {
                   </div>
                   <div className="flex-1">
                     <div className={`text-xl font-bold uppercase ${risk === "High" ? "text-orange-300" : risk === "Medium" ? "text-amber-200" : "text-lime-300"}`}>{risk} risk</div>
-                    <div className="text-xs text-slate-400">Matches {matched} of {factors.length} historical risk factors associated with elevated abandonment</div>
+                    <div className="text-xs text-slate-400">{matched} of {factors.length} historical risk patterns matched</div>
+                    <div className="mt-1 text-[11px] text-slate-500">Based on {ch?.matched_scenes ?? 0} similar scenes and {fmtRows(ch?.rows_scanned ?? 0)} viewer events in the SceneDNA library</div>
                     {ch?.match_note && <div className="mt-1 text-[11px] text-slate-500">{ch.match_note}</div>}
                   </div>
                   <div className="text-right">
-                    <div className="text-[10px] uppercase tracking-widest text-slate-500">Predicted exit rate</div>
+                    <div className="text-[10px] uppercase tracking-widest text-slate-500">Estimated historical exit risk</div>
                     <div className={`font-mono text-3xl ${risk === "High" ? "text-orange-300" : "text-lime-300"}`}>
                       {top ? top.dropout_percentage.toFixed(0) : "—"}% <span className="text-base text-slate-400">± {top ? Math.max(2, Math.round(top.dropout_percentage * 0.15)) : 0}%</span>
                     </div>
+                    <div className="text-[10px] text-slate-500">{top ? `${top.age_group} ${top.device} cohort, ${top.hazard_ratio.toFixed(2)}x baseline` : ""}</div>
                   </div>
                 </div>
                 <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4">
-                  <p className="mb-2 text-xs font-semibold text-white">Key Matching Factors</p>
+                  <p className="mb-2 text-xs font-semibold text-white">Why this scene is {risk.toLowerCase()} risk</p>
                   <ul className="space-y-1.5 text-xs">
                     {factors.map((f) => (
                       <li key={f.label} className="flex items-center gap-2">
-                        <span className={`grid h-4 w-4 place-items-center rounded ${f.hit ? "bg-lime-400 text-black" : "bg-white/10 text-slate-500"}`}>{f.hit ? "✓" : ""}</span>
-                        <span className={f.hit ? "text-slate-200" : "text-slate-500"}>{f.label}</span>
+                        <span className={`grid h-4 w-4 place-items-center rounded text-[10px] ${f.hit ? "bg-orange-500 text-black" : "bg-lime-400 text-black"}`}>{f.hit ? "!" : "✓"}</span>
+                        <span className={f.hit ? "text-orange-200" : "text-slate-200"}>{f.hit ? `${f.label} (matches a historical risk pattern)` : positiveFactor[f.label] ?? f.label}</span>
                       </li>
                     ))}
                   </ul>
@@ -850,7 +923,7 @@ export default function App() {
           <aside className="space-y-5">
             <div className="rounded-2xl border border-white/5 bg-[#0c100c] p-4">
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-semibold text-white">AI Agent Team</h3>
+                <h3 className="text-sm font-semibold text-white">SceneDNA Investigation Pipeline</h3>
                 <span className="ml-auto flex items-center gap-1 text-[11px] text-lime-300">
                   <span className="h-1.5 w-1.5 rounded-full bg-lime-400" /> {health?.clickhouse && health?.gemini ? "All Systems Online" : "Connecting"}
                 </span>
@@ -864,10 +937,10 @@ export default function App() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-xs font-medium text-white">{a.name}</div>
-                      <div className="truncate text-[10px] text-slate-500">{a.role}</div>
+                      <div className="truncate text-[10px] text-slate-500">{loading ? a.role : agentStats[a.key] ?? a.role}</div>
                     </div>
-                    <Activity className="h-3.5 w-3.5 text-lime-400" />
-                    <span className="text-[10px] text-lime-300">{loading ? "Working" : "Online"}</span>
+                    <Activity className={`h-3.5 w-3.5 ${loading ? "animate-pulse text-amber-300" : "text-lime-400"}`} />
+                    <span className={`text-[10px] ${loading ? "text-amber-200" : "text-lime-300"}`}>{loading ? "Working" : "Done"}</span>
                   </div>
                 ))}
               </div>

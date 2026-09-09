@@ -631,6 +631,13 @@ def query_clickhouse_mcp(features: SceneFeatures, trace: AgentTrace | None = Non
             top_risk = segments[0] if segments else None
             match_note = "No library scene shares this exact runtime and dialogue profile, so the comparison uses the nearest creative profiles."
 
+        # How many library scenes share this profile (grounds the "based on N similar scenes" line).
+        _, mc_rows, _ = trace.timed_query(
+            "similar scenes in library",
+            bind_sql("SELECT count() AS scenes FROM scene_dna_features WHERE dialogue_ratio BETWEEN {dr_min:Float32} AND {dr_max:Float32} AND duration_sec BETWEEN {dur_min:UInt32} AND {dur_max:UInt32}", params),
+        )
+        matched_scenes = int(mc_rows[0][0]) if mc_rows else 0
+
         # Step C: where in the runtime does the top-risk cohort leave? (20 relative buckets)
         curve: list[dict[str, Any]] = []
         curve_ms = 0.0
@@ -719,6 +726,7 @@ def query_clickhouse_mcp(features: SceneFeatures, trace: AgentTrace | None = Non
             "scene_types": scene_types,
             "scene_count": scene_count,
             "match_note": match_note,
+            "matched_scenes": matched_scenes,
             "tables": tables,
         }
     except Exception as exc:  # noqa: BLE001
