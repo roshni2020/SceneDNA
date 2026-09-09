@@ -64,3 +64,7 @@
   color: #64748b;
   font-style: italic;
 }
+
+[hidden] {
+  display: none !important;
+}
