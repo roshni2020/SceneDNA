@@ -604,6 +604,32 @@ def query_clickhouse_mcp(features: SceneFeatures, trace: AgentTrace | None = Non
             "hazard_ratio": float(r[idx["hazard_ratio"]]),
         } for r in rows]
         top_risk = segments[0] if segments else None
+        match_note = ""
+        if not segments:
+            # No library scene shares this exact profile (e.g. a very short clip). Widen to the
+            # nearest creative profiles so the cohort evidence is still grounded in real data.
+            params = {
+                "dr_min": float(round(max(0.0, features.dialogue_ratio - 0.30), 2)),
+                "dr_max": float(round(min(1.0, features.dialogue_ratio + 0.30), 2)),
+                "dur_min": 0,
+                "dur_max": 100000,
+            }
+            bound_segments = bind_sql(SEGMENT_HAZARD_SQL, params)
+            columns, rows, seg_ms = trace.timed_query(
+                f"widened profile match (dialogue_ratio {params['dr_min']}-{params['dr_max']}, any runtime)",
+                bound_segments,
+            )
+            idx = {c: i for i, c in enumerate(columns)}
+            segments = [{
+                "age_group": str(r[idx["age_group"]]),
+                "device": str(r[idx["device"]]),
+                "sample_size": int(r[idx["sample_size"]]),
+                "drops": int(r[idx["drops"]]),
+                "dropout_percentage": float(r[idx["dropout_percentage"]]),
+                "hazard_ratio": float(r[idx["hazard_ratio"]]),
+            } for r in rows]
+            top_risk = segments[0] if segments else None
+            match_note = "No library scene shares this exact runtime and dialogue profile, so the comparison uses the nearest creative profiles."
 
         # Step C: where in the runtime does the top-risk cohort leave? (20 relative buckets)
         curve: list[dict[str, Any]] = []
@@ -692,6 +718,7 @@ def query_clickhouse_mcp(features: SceneFeatures, trace: AgentTrace | None = Non
             "scatter": scatter,
             "scene_types": scene_types,
             "scene_count": scene_count,
+            "match_note": match_note,
             "tables": tables,
         }
     except Exception as exc:  # noqa: BLE001

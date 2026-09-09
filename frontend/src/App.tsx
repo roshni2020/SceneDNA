@@ -7,7 +7,6 @@ import {
   BookOpen,
   Bot,
   CheckSquare,
-  ChevronDown,
   Clapperboard,
   Database,
   Eye,
@@ -107,6 +106,7 @@ interface ClickHouseEvidence {
   scatter: ScatterPoint[];
   scene_types: SceneType[];
   scene_count: number;
+  match_note?: string;
   tables: string[];
 }
 interface CutRecommendation {
@@ -423,9 +423,8 @@ export default function App() {
             <div className="grid h-9 w-9 place-items-center rounded-full bg-sky-500/20 font-semibold text-sky-300">R</div>
             <div className="text-sm">
               <div className="text-white">Roshni K</div>
-              <div className="text-xs text-slate-500">Creator</div>
+              <div className="text-xs text-slate-500">Studio workspace</div>
             </div>
-            <ChevronDown className="ml-auto h-4 w-4 text-slate-500" />
           </div>
         </div>
       </aside>
@@ -695,6 +694,7 @@ export default function App() {
                   <div className="flex-1">
                     <div className={`text-xl font-bold uppercase ${risk === "High" ? "text-orange-300" : risk === "Medium" ? "text-amber-200" : "text-lime-300"}`}>{risk} risk</div>
                     <div className="text-xs text-slate-400">Matches {matched} of {factors.length} historical risk factors associated with elevated abandonment</div>
+                    {ch?.match_note && <div className="mt-1 text-[11px] text-slate-500">{ch.match_note}</div>}
                   </div>
                   <div className="text-right">
                     <div className="text-[10px] uppercase tracking-widest text-slate-500">Predicted exit rate</div>
