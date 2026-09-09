@@ -225,7 +225,21 @@ export default function App() {
   const [selectedCut, setSelectedCut] = useState("cut_01");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [nav, setNav] = useState("home");
+  const [nav, setNav] = useState<string>(() => {
+    const h = window.location.hash.replace(/^#\/?/, "");
+    return NAV.some((n) => n.id === h) ? h : "home";
+  });
+  const PAGE_SECTIONS: Record<string, string[]> = {
+    home: ["home", "kpis", "analyze", "patterns", "reports"],
+    analyze: ["kpis", "analyze", "reports"],
+    patterns: ["kpis", "patterns", "library"],
+    library: ["library"],
+    audience: ["kpis", "library"],
+    reports: ["reports", "logs"],
+    logs: ["logs"],
+    settings: ["settings"],
+  };
+  const show = (section: string) => (PAGE_SECTIONS[nav] ?? PAGE_SECTIONS.home).includes(section);
   const [now, setNow] = useState(new Date());
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -364,8 +378,17 @@ export default function App() {
   const cuts = data?.prescription_structured.cuts ?? [];
   const scrollTo = (id: string) => {
     setNav(id);
-    document.getElementById(`sec-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.location.hash = `/${id}`;
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
+  useEffect(() => {
+    const onHash = () => {
+      const h = window.location.hash.replace(/^#\/?/, "");
+      if (NAV.some((n) => n.id === h)) setNav(h);
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
 
   // ----------------------------------------------------------------------------------
   return (
@@ -440,6 +463,13 @@ export default function App() {
 
         <main className="grid gap-5 px-6 py-5 2xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="min-w-0 space-y-5">
+            {nav !== "home" && (
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <button onClick={() => scrollTo("home")} className="hover:text-white">Home</button>
+                <span>/</span>
+                <span className="text-white">{NAV.find((n) => n.id === nav)?.label}</span>
+              </div>
+            )}
             {data && data.mode.mode !== "live" && (
               <div className="flex items-center gap-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-2.5 text-xs text-amber-100">
                 <AlertTriangle className="h-4 w-4 shrink-0" /> {data.mode.label}: {data.mode.detail}. Live results return automatically once the service recovers.
@@ -472,7 +502,7 @@ export default function App() {
             )}
 
             {/* Hero */}
-            <section id="sec-home" className="relative overflow-hidden rounded-2xl border border-white/5 bg-[#0c100c]">
+            <section id="sec-home" hidden={!show("home")} className="relative overflow-hidden rounded-2xl border border-white/5 bg-[#0c100c]">
               <div className="pointer-events-none absolute inset-0 [background:radial-gradient(ellipse_at_80%_40%,rgba(251,146,60,0.22),transparent_45%),radial-gradient(ellipse_at_95%_90%,rgba(163,230,53,0.12),transparent_40%)]" />
               <div className="pointer-events-none absolute right-0 top-0 h-full w-1/2 bg-[linear-gradient(120deg,transparent_0%,rgba(255,255,255,0.03)_50%,transparent_100%)]" />
               <div className="relative grid gap-6 p-8 md:grid-cols-[1.4fr_1fr]">
@@ -502,7 +532,7 @@ export default function App() {
             </section>
 
             {/* KPIs */}
-            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <section id="sec-kpis" hidden={!show("kpis")} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <Kpi icon={<Eye className="h-5 w-5" />} value={fmtRows(health?.rows_scanned ?? ch?.rows_scanned ?? 0)} label="Viewer Events" spark={[3, 4, 4, 5, 6, 7, 8, 9]} tone="lime" />
               <Kpi icon={<Database className="h-5 w-5" />} value={String(ch?.scene_count ?? 0)} label="Scenes Analyzed" spark={[2, 3, 3, 4, 5, 5, 6, 6]} tone="sky" />
               <Kpi icon={<Users className="h-5 w-5" />} value={String(ch?.segments.length ?? 0)} label="Audience Segments" spark={[4, 4, 5, 5, 5, 6, 6, 7]} tone="violet" />
@@ -510,7 +540,7 @@ export default function App() {
             </section>
 
             {/* Scene Analysis */}
-            <section id="sec-analyze" className="rounded-2xl border border-white/5 bg-[#0c100c] p-5">
+            <section id="sec-analyze" hidden={!show("analyze")} className="rounded-2xl border border-white/5 bg-[#0c100c] p-5">
               <div className="mb-4 flex flex-wrap items-center gap-2">
                 <div>
                   <h2 className="text-lg font-semibold text-white">Scene Analysis</h2>
@@ -618,7 +648,7 @@ export default function App() {
             </section>
 
             {/* Pattern discovery */}
-            <section id="sec-patterns" className="rounded-2xl border border-white/5 bg-[#0c100c] p-5">
+            <section id="sec-patterns" hidden={!show("patterns")} className="rounded-2xl border border-white/5 bg-[#0c100c] p-5">
               <div className="mb-4 flex flex-wrap items-center gap-3">
                 <div>
                   <h2 className="text-lg font-semibold text-white">Historical Pattern Discovery</h2>
@@ -649,12 +679,12 @@ export default function App() {
             </section>
 
             {/* Risk assessment */}
-            <section id="sec-reports" className="rounded-2xl border border-white/5 bg-[#0c100c] p-5">
+            <section id="sec-reports" hidden={!show("reports")} className="rounded-2xl border border-white/5 bg-[#0c100c] p-5">
               <div className="mb-4 flex items-center gap-3">
                 <h2 className="text-lg font-semibold text-white">New Scene Risk Assessment</h2>
                 <span className="text-xs text-slate-500">Compare your scene against discovered patterns</span>
                 <button onClick={() => scrollTo("logs")} className="ml-auto flex items-center gap-1 rounded-md border border-white/15 px-3 py-1.5 text-xs text-white hover:bg-white/5">
-                  Inspect ClickHouse evidence <ArrowRight className="h-3 w-3" />
+                  Open Agent Logs <ArrowRight className="h-3 w-3" />
                 </button>
               </div>
               <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr_1.3fr]">
@@ -716,7 +746,7 @@ export default function App() {
             </section>
 
             {/* Library + audience */}
-            <section id="sec-library" className="grid gap-5 lg:grid-cols-2">
+            <section id="sec-library" hidden={!show("library")} className="grid gap-5 lg:grid-cols-2">
               <div className="rounded-2xl border border-white/5 bg-[#0c100c] p-5">
                 <h2 className="text-sm font-semibold text-white">Episodes & Library</h2>
                 <p className="mb-3 text-xs text-slate-500">Scenes in the DNA library and their exit rate for the risk cohort</p>
@@ -756,7 +786,7 @@ export default function App() {
             </section>
 
             {/* Agent logs / evidence */}
-            <section id="sec-logs" className="rounded-2xl border border-white/5 bg-[#0c100c] p-5">
+            <section id="sec-logs" hidden={!show("logs")} className="rounded-2xl border border-white/5 bg-[#0c100c] p-5">
               <div className="mb-4 flex flex-wrap items-center gap-3">
                 <Database className="h-4 w-4 text-amber-300" />
                 <h2 className="text-sm font-semibold uppercase tracking-[0.2em] text-white">Agent Logs · ClickHouse evidence</h2>
@@ -805,7 +835,7 @@ export default function App() {
               )}
             </section>
 
-            <section id="sec-settings" className="rounded-2xl border border-white/5 bg-[#0c100c] p-5 text-xs text-slate-400">
+            <section id="sec-settings" hidden={!show("settings")} className="rounded-2xl border border-white/5 bg-[#0c100c] p-5 text-xs text-slate-400">
               <h2 className="mb-2 text-sm font-semibold text-white">Settings</h2>
               <div className="grid gap-2 sm:grid-cols-2">
                 <Row label="Gemini model" value={data?.model || health?.gemini_model || "—"} />
