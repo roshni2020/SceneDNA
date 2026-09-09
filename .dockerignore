@@ -1,12 +1,11 @@
-.venv
 .env
+.venv
 .git
-.github
-.rocketride
-.claude
+.[a-z]*
 __pycache__
 *.pyc
 frontend/node_modules
 frontend/dist
 gemini_build.py
 generate_project.py
+deploy.ps1

@@ -1,9 +1,7 @@
-.rocketride/
+# local secrets, environments, build output, hidden tool folders
 .env
-.venv/
+.*/
 __pycache__/
 *.pyc
 frontend/node_modules/
 frontend/dist/
-.claude/
-.github/
